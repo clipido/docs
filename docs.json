@@ -29,7 +29,7 @@
         {
           "anchor": "Changelog",
           "icon": "scroll-text",
-          "href": "https://www.mintlify.com/docs/changelog"
+          "href": "/changelog/overview"
         },
         {
           "anchor": "Help",
