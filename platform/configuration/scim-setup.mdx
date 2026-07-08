@@ -1,0 +1,175 @@
+---
+title: "Set up SCIM provisioning"
+description: "Connect your identity provider to automatically provision users and groups into Clipido deployments."
+sidebarTitle: "SCIM setup"
+icon: "users-round"
+---
+
+Use SCIM to sync users and groups from your identity provider (IdP) into Clipido. SCIM keeps your directory up to date; when a provisioned user signs in, Clipido grants access based on your group mappings.
+
+<Info>
+  SCIM does not sign users in by itself. It provisions identities and group membership. Access is applied when the user logs in through your configured SSO method.
+</Info>
+
+## Prerequisites
+
+Before you start, make sure you have:
+
+- **Admin Center access** for your organization
+- At least one **deployment** (workspace) you want to provision into
+- **Access groups** created in that deployment for the roles you want to assign
+- An IdP that supports SCIM 2.0 (for example Microsoft Entra ID or Okta)
+
+<Tip>
+  Set up SSO first if you want users to sign in with the same identity provider that provisions them.
+</Tip>
+
+## Overview
+
+| Step | Where | What happens |
+| --- | --- | --- |
+| 1. Create connector | Admin Center → **Identity** | Clipido generates a SCIM endpoint and bearer token |
+| 2. Configure IdP | Your IdP admin console | IdP sends users and groups to Clipido |
+| 3. Map groups | Deployment **Settings → Members** | IdP groups are linked to Clipido access groups |
+| 4. Verify | Deployment **Settings → Members** | Synced users appear; users gain access on login |
+
+---
+
+## Step 1: Create a SCIM connector
+
+<Steps>
+  <Step title="Open Identity settings">
+    In the Admin Center, go to **Identity**. Under **SCIM Provisioners**, click **Add Provisioner**.
+  </Step>
+  <Step title="Name the connector">
+    Enter a display name your team will recognize, for example `Entra SCIM` or `Okta Provisioning`.
+  </Step>
+  <Step title="Assign deployments">
+    Select every deployment this IdP should provision into. Each deployment can only be attached to **one** SCIM connector.
+  </Step>
+  <Step title="Choose a fallback access group">
+    For each assigned deployment, pick a **fallback access group**. This group receives SCIM users who sign in but are not in any mapped IdP group.
+  </Step>
+  <Step title="Set assignment mode">
+    Choose how strictly SCIM controls group membership:
+
+    - **Manual** — admins can still move SCIM users between groups in Clipido. Use this when your IdP does not sync groups.
+    - **Enforced** — SCIM is the source of truth for group assignments. Manual moves that conflict with IdP state are blocked.
+  </Step>
+  <Step title="Save the bearer token">
+    After creation, Clipido shows a **bearer token once**. Copy it to your password manager immediately — it cannot be retrieved later. Use **Regenerate token** in Admin Center if you lose it.
+  </Step>
+</Steps>
+
+The **Base URL** for your connector is shown on the Identity page:
+
+```text
+https://{your-api-host}/scim/v2
+```
+
+Use this URL as the **Tenant URL** or **SCIM connector base URL** in your IdP.
+
+---
+
+## Step 2: Configure your identity provider
+
+In your IdP, create a SCIM provisioning app (or enable automatic provisioning on an existing enterprise app) and enter:
+
+| Field | Value |
+| --- | --- |
+| Tenant URL / SCIM base URL | `https://{your-api-host}/scim/v2` |
+| Authentication | Bearer token (secret token) |
+| Secret token | The bearer token from Step 1 |
+
+<Warning>
+  Store the bearer token securely. Anyone with the token can provision users into your organization.
+</Warning>
+
+### Microsoft Entra ID notes
+
+Clipido is tested with Entra automatic provisioning. In production, Entra typically:
+
+- Creates users with `POST /Users`
+- Updates users with `PATCH /Users/{id}` (not full `PUT` replaces)
+- Deactivates users by setting `active` to `False` (rather than calling `DELETE`)
+- Changes group membership with `PATCH /Groups/{id}` using `Add` and `Remove` operations
+
+Enable provisioning for the users and groups you want synced, then run **Provision on demand** or wait for the next sync cycle to confirm users appear in Clipido.
+
+---
+
+## Step 3: Map SCIM groups to access groups
+
+After your IdP syncs groups, map them to Clipido access groups so provisioned users receive the right permissions.
+
+<Steps>
+  <Step title="Open group settings">
+    In a deployment, go to **Settings → Members** and open the access group you want to configure (for example **Editors** or **Viewers**).
+  </Step>
+  <Step title="Map an IdP group">
+    In the **SCIM mapping** section, click **Map SCIM group** and select a synced IdP group. Save the mapping.
+  </Step>
+  <Step title="Repeat for each role">
+    Map every IdP group that should grant access to a different Clipido access group. Users in multiple mapped groups receive access to each linked group.
+  </Step>
+</Steps>
+
+<Tip>
+  The fallback access group you chose in Step 1 applies to active SCIM users who are not in any mapped IdP group. You do not need a separate mapping for that case.
+</Tip>
+
+---
+
+## Step 4: Verify provisioning
+
+<Steps>
+  <Step title="Check synced users">
+    In **Settings → Members** (workspace level, not inside a group), review the **SCIM users** list. Newly provisioned users appear here before they log in.
+  </Step>
+  <Step title="Test sign-in">
+    Have a provisioned user sign in through SSO. Clipido creates or updates their app account and grants access based on your mappings.
+  </Step>
+  <Step title="Test deactivation">
+    Deactivate a user in your IdP and confirm their SCIM-managed access is revoked on the next sync.
+  </Step>
+</Steps>
+
+---
+
+## How access works
+
+<AccordionGroup>
+  <Accordion title="What SCIM controls">
+    SCIM syncs **users** and **groups** from your IdP into Clipido. When an active SCIM user logs in, Clipido applies access group membership based on your SCIM group mappings.
+
+    For mapped groups, SCIM is authoritative: it can overwrite manually assigned membership for the same access group.
+  </Accordion>
+
+  <Accordion title="Removing users">
+    Remove or deactivate users in your IdP — not in Clipido. When assignment mode is **Enforced**, you cannot remove SCIM-managed members from the Clipido UI; changes must come from the IdP.
+  </Accordion>
+
+  <Accordion title="One connector per deployment">
+    Each deployment attaches to at most one SCIM connector. If you operate multiple IdPs, create separate connectors and assign each deployment to the connector that matches its directory.
+  </Accordion>
+
+  <Accordion title="Regenerating tokens">
+    Regenerating a token in Admin Center invalidates the previous token immediately. Update the secret in your IdP before or right after regenerating to avoid sync interruptions.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | What to do |
+| --- | --- | --- |
+| No users appear after IdP sync | Wrong base URL or token | Confirm URL ends with `/scim/v2` and the bearer token matches the active connector |
+| Users sync but have no access | Missing group mappings | Map IdP groups in **Settings → Members**, or confirm the fallback group is correct |
+| **No SCIM groups synced yet** in mapping UI | Groups not provisioned from IdP | Enable group sync in your IdP and wait for the next cycle |
+| Cannot remove a member manually | Enforced assignment mode | Remove the user from the IdP group or switch to Manual mode if appropriate |
+| Sync stopped after token change | IdP still uses old token | Paste the new token into your IdP provisioning settings |
+
+<Note>
+  If provisioning fails repeatedly, contact Clipido support with the approximate time of the failure and the email of an affected user.
+</Note>
